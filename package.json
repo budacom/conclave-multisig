@@ -1,28 +1,28 @@
 {
-  "name": "simple-multisig",
+  "name": "conclave-multisig",
   "version": "1.0.0",
-  "description": "Simple Ethereum multisig contract",
-  "main": "test/simplemultisig.js",
+  "description": "Conclave Ethereum Multisig Contract",
+  "main": "test/conclave_multisig.js",
   "directories": {
     "test": "test"
   },
   "scripts": {
-    "test": "truffle test"
+    "test": "truffle test --network=test"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/christianlundkvist/simple-multisig.git"
+    "url": "git+https://github.com/budacom/conclave-multisig.git"
   },
   "keywords": [
     "Ethereum",
     "Wallet"
   ],
-  "author": "christian.lundkvist@gmail.com",
+  "author": "ignacio@buda.com",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/christianlundkvist/simple-multisig/issues"
+    "url": "https://github.com/budacom/conclave-multisig/issues"
   },
-  "homepage": "https://github.com/christianlundkvist/simple-multisig#readme",
+  "homepage": "https://github.com/budacom/conclave-multisig#readme",
   "devDependencies": {
     "eth-lightwallet": "*",
     "bluebird": "*",

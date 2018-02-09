@@ -1,4 +1,7 @@
-Copyright (c) 2017 Christian Lundkvist
+Copyright for portions of conclave-multisig are held by Christian Lundkvist, 2017 as part of simple-multisig.
+Copyright for portions of conclave-multisig are held by Andreas Olofsson as part of the RLP decoder lib.
+
+All other copyright for conclave-multisig are held by Ignacio Baixas, 2018.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

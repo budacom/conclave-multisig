@@ -1,43 +1,75 @@
-var SimpleMultiSig = artifacts.require("./SimpleMultiSig.sol")
+var ConclaveMultiSig = artifacts.require("./ConclaveMultiSig.sol")
 var TestRegistry = artifacts.require("./TestRegistry.sol")
+
 var lightwallet = require('eth-lightwallet')
 const solsha3 = require('solidity-sha3').default
-const leftPad = require('left-pad')
 const Promise = require('bluebird')
 const BigNumber = require('bignumber.js')
+const EthereumTx = require('ethereumjs-tx');
+const EthUtil = require('ethereumjs-util');
 
 const web3SendTransaction = Promise.promisify(web3.eth.sendTransaction)
 const web3GetBalance = Promise.promisify(web3.eth.getBalance)
 
-contract('SimpleMultiSig', function(accounts) {
+function add0x (input) {
+  if (typeof(input) === 'object') {
+    input = input.toString(16);
+  }
 
-  let keyFromPw
-  let acct
-  let lw
+  if (typeof(input) === 'number') {
+    input = input.toString(16);
+    if(input.length % 2 == 1) input = '0' + input;
+  }
 
-  let createSigs = function(signers, multisigAddr, nonce, destinationAddr, value, data) {
+  if (input.slice(0, 2) !== '0x') {
+    return '0x' + input;
+  }
 
-    let input = '0x19' + '00' + multisigAddr.slice(2) + destinationAddr.slice(2) + leftPad(value.toString('16'), '64', '0') + data.slice(2) + leftPad(nonce.toString('16'), '64', '0')
-    let hash = solsha3(input)
+  return input;
+}
 
+function strip0x (input) {
+  return input.slice(2);
+}
+
+contract('ConclaveMultiSig', function(accounts) {
+  let buildTx = function(nonce, destinationAddr, value, data) {
+    const tx = {
+      nonce: add0x(nonce),
+      gasPrice: add0x(1), // this is ignored by contract
+      gasLimit: add0x(150000),
+      to: add0x(destinationAddr),
+      value: add0x(value),
+      data: add0x(data),
+      chainId: 3, // EIP 155 chainId - mainnet: 1, ropsten: 3
+    };
+
+    return '0x' + (new EthereumTx(tx).serialize().toString('hex'));
+  }
+
+  let createSigs = function(signers, multisigAddr, tx) {
     let sigV = []
     let sigR = []
     let sigS = []
 
-    for (var i=0; i<signers.length; i++) {
-      let sig = lightwallet.signing.signMsgHash(lw, keyFromPw, hash, signers[i])
+    for (var i = 0; i < signers.length; i++) {
+      var privKey = lw.exportPrivateKey(strip0x(signers[i]), keyFromPw);
+      const txHash = EthUtil.sha3(new Buffer(strip0x(tx), 'hex'))
+      const sig = EthUtil.ecsign(txHash, new Buffer(privKey, 'hex'))
+
       sigV.push(sig.v)
       sigR.push('0x' + sig.r.toString('hex'))
       sigS.push('0x' + sig.s.toString('hex'))
     }
 
-    return {sigV: sigV, sigR: sigR, sigS: sigS}
+    // console.log({ sigV: sigV, sigR: sigR, sigS: sigS })
 
+    return { sigV: sigV, sigR: sigR, sigS: sigS }
   }
 
   let executeSendSuccess = async function(owners, threshold, signers, done) {
 
-    let multisig = await SimpleMultiSig.new(threshold, owners, {from: accounts[0]})
+    let multisig = await ConclaveMultiSig.new(threshold, owners, {from: accounts[0]})
 
     let randomAddr = solsha3(Math.random()).slice(0,42)
 
@@ -45,7 +77,7 @@ contract('SimpleMultiSig', function(accounts) {
     await web3SendTransaction({from: accounts[0], to: multisig.address, value: web3.toWei(new BigNumber(0.1), 'ether')})
 
     let nonce = await multisig.nonce.call()
-    assert.equal(nonce.toNumber(), 0)
+    assert.equal(nonce.toNumber(), 1)
 
     let bal = await web3GetBalance(multisig.address)
     assert.equal(bal, web3.toWei(0.1, 'ether'))
@@ -57,10 +89,10 @@ contract('SimpleMultiSig', function(accounts) {
     }
 
     let value = web3.toWei(new BigNumber(0.01), 'ether')
-
-    let sigs = createSigs(signers, multisig.address, nonce, randomAddr, value, '0x')
-
-    await multisig.execute(sigs.sigV, sigs.sigR, sigs.sigS, randomAddr, value, '0x', {from: accounts[0], gasLimit: 1000000})
+    let fullNonce = await multisig.getFullNonce.call()
+    let tx = buildTx(fullNonce, randomAddr, value, '0x')
+    let sigs = createSigs(signers, multisig.address, tx)
+    await multisig.execute(sigs.sigV, sigs.sigR, sigs.sigS, tx, {from: accounts[0], gasLimit: 1000000})
 
     // Check funds sent
     bal = await web3GetBalance(randomAddr)
@@ -68,11 +100,12 @@ contract('SimpleMultiSig', function(accounts) {
 
     // Check nonce updated
     nonce = await multisig.nonce.call()
-    assert.equal(nonce.toNumber(), 1)
+    assert.equal(nonce.toNumber(), 2)
 
     // Send again
-    sigs = createSigs(signers, multisig.address, nonce, randomAddr, value, '0x')
-    await multisig.execute(sigs.sigV, sigs.sigR, sigs.sigS, randomAddr, value, '0x', {from: accounts[0], gasLimit: 1000000})
+    tx = buildTx(fullNonce.plus(1), randomAddr, value, '0x')
+    sigs = createSigs(signers, multisig.address, tx)
+    await multisig.execute(sigs.sigV, sigs.sigR, sigs.sigS, tx, {from: accounts[0], gasLimit: 1000000})
 
     // Check funds
     bal = await web3GetBalance(randomAddr)
@@ -80,16 +113,17 @@ contract('SimpleMultiSig', function(accounts) {
 
     // Check nonce updated
     nonce = await multisig.nonce.call()
-    assert.equal(nonce.toNumber(), 2)
+    assert.equal(nonce.toNumber(), 3)
 
     // Test contract interactions
     let reg = await TestRegistry.new({from: accounts[0]})
 
     let number = 12345
-    let data = '0x' + lightwallet.txutils._encodeFunctionTxData('register', ['uint256'], [number])
+    let data = lightwallet.txutils._encodeFunctionTxData('register', ['uint256'], [number])
 
-    sigs = createSigs(signers, multisig.address, nonce, reg.address, value, data)
-    await multisig.execute(sigs.sigV, sigs.sigR, sigs.sigS, reg.address, value, data, {from: accounts[0], gasLimit: 1000000})
+    tx = buildTx(fullNonce.plus(2), reg.address, value, data)
+    sigs = createSigs(signers, multisig.address, tx)
+    await multisig.execute(sigs.sigV, sigs.sigR, sigs.sigS, tx, {from: accounts[0], gasLimit: 1000000})
 
     // Check that number has been set in registry
     let numFromRegistry = await reg.registry(multisig.address)
@@ -101,71 +135,66 @@ contract('SimpleMultiSig', function(accounts) {
 
     // Check nonce updated
     nonce = await multisig.nonce.call()
-    assert.equal(nonce.toNumber(), 3)
+    assert.equal(nonce.toNumber(), 4)
 
     done()
   }
 
   let executeSendFailure = async function(owners, threshold, signers, done) {
-
-    let multisig = await SimpleMultiSig.new(threshold, owners, {from: accounts[0]})
-
+    let multisig = await ConclaveMultiSig.new(threshold, owners, {from: accounts[0]})
     let nonce = await multisig.nonce.call()
-    assert.equal(nonce.toNumber(), 0)
+    assert.equal(nonce.toNumber(), 1)
 
     // Receive funds
     await web3SendTransaction({from: accounts[0], to: multisig.address, value: web3.toWei(new BigNumber(2), 'ether')})
 
+    let fullNonce = await multisig.getFullNonce.call()
     let randomAddr = solsha3(Math.random()).slice(0,42)
     let value = web3.toWei(new BigNumber(0.1), 'ether')
-    let sigs = createSigs(signers, multisig.address, nonce, randomAddr, value, '0x')
+    let tx = buildTx(fullNonce, randomAddr, value, '0x')
+    let sigs = createSigs(signers, multisig.address, tx)
 
     let errMsg = ''
     try {
-    await multisig.execute(sigs.sigV, sigs.sigR, sigs.sigS, randomAddr, value, '0x', {from: accounts[0], gasLimit: 1000000})
+      await multisig.execute(sigs.sigV, sigs.sigR, sigs.sigS, tx, {from: accounts[0], gasLimit: 1000000})
     }
     catch(error) {
       errMsg = error.message
     }
 
-    assert.equal(errMsg, 'VM Exception while processing transaction: invalid opcode', 'Test did not throw')
-
+    assert.equal(errMsg, 'VM Exception while processing transaction: revert', 'Test did not throw')
     done()
   }
 
   let creationFailure = async function(owners, threshold, done) {
-
     try {
-      await SimpleMultiSig.new(threshold, owners, {from: accounts[0]})
+      await ConclaveMultiSig.new(threshold, owners, {from: accounts[0]})
     }
     catch(error) {
       errMsg = error.message
     }
 
-    assert.equal(errMsg, 'VM Exception while processing transaction: invalid opcode', 'Test did not throw')
-
+    assert.equal(errMsg, 'VM Exception while processing transaction: revert', 'Test did not throw')
     done()
   }
-  
-  before((done) => {
 
+  before((done) => {
     let seed = "pull rent tower word science patrol economy legal yellow kit frequent fat"
 
     lightwallet.keystore.createVault(
-    {hdPathString: "m/44'/60'/0'/0",
-     seedPhrase: seed,
-     password: "test",
-     salt: "testsalt"
+    {
+      hdPathString: "m/44'/60'/0'/0",
+      seedPhrase: seed,
+      password: "test",
+      salt: "testsalt"
     },
     function (err, keystore) {
-
       lw = keystore
       lw.keyFromPassword("test", function(e,k) {
         keyFromPw = k
 
         lw.generateNewAddress(keyFromPw, 20)
-        let acctWithout0x = lw.getAddresses()
-        acct = acctWithout0x.map((a) => {return '0x'+a})
+        acct = lw.getAddresses()
         acct.sort()
         done()
       })
@@ -173,7 +202,6 @@ contract('SimpleMultiSig', function(accounts) {
   })
 
   describe("3 signers, threshold 2", () => {
-
     it("should succeed with signers 0, 1", (done) => {
       let signers = [acct[0], acct[1]]
       signers.sort()
@@ -216,14 +244,14 @@ contract('SimpleMultiSig', function(accounts) {
       executeSendFailure(acct.slice(0,3), 2, signers, done)
     })
 
-  })  
+  })
 
   describe("Edge cases", () => {
     it("should succeed with 10 owners, 10 signers", (done) => {
       executeSendSuccess(acct.slice(0,10), 10, acct.slice(0,10), done)
     })
 
-    it("should fail to create with signers 0, 0, 2, and threshold 3", (done) => { 
+    it("should fail to create with signers 0, 0, 2, and threshold 3", (done) => {
       creationFailure([acct[0],acct[0],acct[2]], 3, done)
     })
 
@@ -235,5 +263,4 @@ contract('SimpleMultiSig', function(accounts) {
       creationFailure(acct.slice(0,11), 2, done)
     })
   })
-
 })
