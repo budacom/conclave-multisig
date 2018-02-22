@@ -1,266 +1,340 @@
-var ConclaveMultiSig = artifacts.require("./ConclaveMultiSig.sol")
+const lightwallet = require('eth-lightwallet');
+const _ = require('lodash');
+const RLP = require('rlp');
+
+const {
+  generateSigners, buildTx, signTx, encodeFunction, randomAddress, randomParams, ether, gwei
+} = require('./eth_support');
+
+var ManagedMultiSig = artifacts.require("./ManagedMultiSig.sol")
 var TestRegistry = artifacts.require("./TestRegistry.sol")
 
-var lightwallet = require('eth-lightwallet')
-const solsha3 = require('solidity-sha3').default
-const Promise = require('bluebird')
-const BigNumber = require('bignumber.js')
-const EthereumTx = require('ethereumjs-tx');
-const EthUtil = require('ethereumjs-util');
-
-const web3SendTransaction = Promise.promisify(web3.eth.sendTransaction)
-const web3GetBalance = Promise.promisify(web3.eth.getBalance)
-
-function add0x (input) {
-  if (typeof(input) === 'object') {
-    input = input.toString(16);
-  }
-
-  if (typeof(input) === 'number') {
-    input = input.toString(16);
-    if(input.length % 2 == 1) input = '0' + input;
-  }
-
-  if (input.slice(0, 2) !== '0x') {
-    return '0x' + input;
-  }
-
-  return input;
+function wait(_promiseFun) {
+  return function(_done) {
+    _promiseFun().then(_done, _done);
+  };
 }
 
-function strip0x (input) {
-  return input.slice(2);
+function assertItFails(_promise) {
+  return _promise.then(function() {
+    assert(false, 'did not fail');
+  }, function() {
+    assert(true);
+  });
 }
 
-contract('ConclaveMultiSig', function(accounts) {
-  let buildTx = function(nonce, destinationAddr, value, data) {
-    const tx = {
-      nonce: add0x(nonce),
-      gasPrice: add0x(1), // this is ignored by contract
-      gasLimit: add0x(150000),
-      to: add0x(destinationAddr),
-      value: add0x(value),
-      data: add0x(data),
-      chainId: 3, // EIP 155 chainId - mainnet: 1, ropsten: 3
-    };
+function assertLogContains(result_, event_, match_) {
+  assert(
+    _.some(result_.logs, (l) => l.event === event_ && _.isMatch(l.args, match_)),
+    'Matching event not found'
+  );
+}
 
-    return '0x' + (new EthereumTx(tx).serialize().toString('hex'));
-  }
+contract('ManagedMultiSig', function(fundedAccounts) {
+  let wallet;
+  const manager = fundedAccounts[0];
+  const vc = fundedAccounts[1];
+  let accounts;
 
-  let createSigs = function(signers, multisigAddr, tx) {
-    let sigV = []
-    let sigR = []
-    let sigS = []
+  before(wait(async () => {
+    accounts = await generateSigners();
+  }));
 
-    for (var i = 0; i < signers.length; i++) {
-      var privKey = lw.exportPrivateKey(strip0x(signers[i]), keyFromPw);
-      const txHash = EthUtil.sha3(new Buffer(strip0x(tx), 'hex'))
-      const sig = EthUtil.ecsign(txHash, new Buffer(privKey, 'hex'))
+  beforeEach(wait(async () => {
+    wallet = await ManagedMultiSig.new({ from: manager });
+  }));
 
-      sigV.push(sig.v)
-      sigR.push('0x' + sig.r.toString('hex'))
-      sigS.push('0x' + sig.s.toString('hex'))
-    }
+  it("adds deploying account as manager", wait(async () => {
+    assert.equal(await wallet.manager(), manager);
+  }));
 
-    // console.log({ sigV: sigV, sigR: sigR, sigS: sigS })
+  describe("activate", () => {
+    let signers;
 
-    return { sigV: sigV, sigR: sigR, sigS: sigS }
-  }
+    before(() => {
+      signers = [accounts[0], accounts[1], accounts[2]].sort();
+    });
 
-  let executeSendSuccess = async function(owners, threshold, signers, done) {
+    it("sets the onwers and threshold for the wallet", wait(async () => {
+      await wallet.activate(2, signers, { from: manager });
 
-    let multisig = await ConclaveMultiSig.new(threshold, owners, {from: accounts[0]})
+      assert(await wallet.isOwner(accounts[1]));
+      assert(await wallet.isOwner(accounts[2]));
+      assert(!await wallet.isOwner(accounts[4]));
+      assert.equal((await wallet.threshold()).toNumber(), 2);
+    }));
 
-    let randomAddr = solsha3(Math.random()).slice(0,42)
+    it("fails if called by an account that is not the manager", wait(async () => {
+      await assertItFails(wallet.activate(2, signers, { from: accounts[1] }));
+    }));
 
-    // Receive funds
-    await web3SendTransaction({from: accounts[0], to: multisig.address, value: web3.toWei(new BigNumber(0.1), 'ether')})
+    it("fails if called on an already active wallet", wait(async () => {
+      await wallet.activate(2, signers, { from: manager });
+      await assertItFails(wallet.activate(2, signers, { from: manager }));
+    }));
 
-    let nonce = await multisig.nonce.call()
-    assert.equal(nonce.toNumber(), 1)
+    it("fails if given owner array is not sorted ascending");
 
-    let bal = await web3GetBalance(multisig.address)
-    assert.equal(bal, web3.toWei(0.1, 'ether'))
+    describe("after funding the wallet", () => {
+      beforeEach(wait(async () => {
+        await wallet.sendTransaction({ from: vc, value: ether(1) });
+      }));
 
-    // check that owners are stored correctly
-    for (var i=0; i<owners.length; i++) {
-      let ownerFromContract = await multisig.ownersArr.call(i)
-      assert.equal(owners[i], ownerFromContract)
-    }
+      it("transfers the given activation fee to manager", wait(async () => {
+        const initialBalance = web3.eth.getBalance(manager);
+        const activationFee = gwei(10).mul(40 + 6 * 25); // deploying a 3 owner contract is about 105k
+        await wallet.activate(2, [accounts[0], accounts[1], accounts[2], accounts[3], accounts[4], accounts[5]].sort(), { from: manager, gasPrice: gwei(10) });
 
-    let value = web3.toWei(new BigNumber(0.01), 'ether')
-    let fullNonce = await multisig.getFullNonce.call()
-    let tx = buildTx(fullNonce, randomAddr, value, '0x')
-    let sigs = createSigs(signers, multisig.address, tx)
-    await multisig.execute(sigs.sigV, sigs.sigR, sigs.sigS, tx, {from: accounts[0], gasLimit: 1000000})
+        assert.isAbove(web3.eth.getBalance(manager).toNumber(), initialBalance.toNumber());
+      }));
+    });
+  });
 
-    // Check funds sent
-    bal = await web3GetBalance(randomAddr)
-    assert.equal(bal.toString(), value.toString())
+  describe("execute", () => {
+    let signers;
+    let nonce, destination, amount, gasPrice, gasLimit;
 
-    // Check nonce updated
-    nonce = await multisig.nonce.call()
-    assert.equal(nonce.toNumber(), 2)
+    describe("given a 2 out of 3 funded wallet", () => {
+      before(() => {
+        signers = [accounts[0], accounts[1], accounts[2]].sort();
+      });
 
-    // Send again
-    tx = buildTx(fullNonce.plus(1), randomAddr, value, '0x')
-    sigs = createSigs(signers, multisig.address, tx)
-    await multisig.execute(sigs.sigV, sigs.sigR, sigs.sigS, tx, {from: accounts[0], gasLimit: 1000000})
+      beforeEach(wait(async () => {
+        await wallet.activate(2, signers, { from: manager });
+        await wallet.sendTransaction({ from: vc, value: ether(1) });
 
-    // Check funds
-    bal = await web3GetBalance(randomAddr)
-    assert.equal(bal.toString(), (value*2).toString())
+        nonce = await wallet.fullNonce();
+        ({ destination, amount, gasPrice } = randomParams());
+      }));
 
-    // Check nonce updated
-    nonce = await multisig.nonce.call()
-    assert.equal(nonce.toNumber(), 3)
+      [[0, 1], [1, 2], [0, 2]].forEach(([a, b]) => {
+        it(`succeeds with signers [${a}, ${b}]`, wait(async () => {
+          const transaction = buildTx(nonce, destination, amount, 50000, gasPrice);
+          const { v, r, s } = signTx(transaction, [signers[a], signers[b]]);
 
-    // Test contract interactions
-    let reg = await TestRegistry.new({from: accounts[0]})
+          const result = await wallet.execute(
+            v, r, s, transaction, { from: manager, gas: 500000, gasPrice: gasPrice }
+          );
 
-    let number = 12345
-    let data = lightwallet.txutils._encodeFunctionTxData('register', ['uint256'], [number])
+          assert.equal(web3.eth.getBalance(destination).toNumber(), amount);
+          assertLogContains(result, 'Result', { succeeded: true });
+        }));
+      });
 
-    tx = buildTx(fullNonce.plus(2), reg.address, value, data)
-    sigs = createSigs(signers, multisig.address, tx)
-    await multisig.execute(sigs.sigV, sigs.sigR, sigs.sigS, tx, {from: accounts[0], gasLimit: 1000000})
+      it('properly calls a contract function', wait(async () => {
+        const reg = await TestRegistry.new({ from: vc });
+        const number = 12345;
+        const data = encodeFunction('register', ['uint256'], [number]);
 
-    // Check that number has been set in registry
-    let numFromRegistry = await reg.registry(multisig.address)
-    assert.equal(numFromRegistry.toNumber(), number)
+        const transaction = buildTx(nonce, reg.address, amount, 50000, gasPrice, data);
+        const { v, r, s } = signTx(transaction, [signers[0], signers[1]]);
 
-    // Check funds in registry
-    bal = await web3GetBalance(reg.address)
-    assert.equal(bal.toString(), value.toString())
+        const result = await wallet.execute(
+          v, r, s, transaction, { from: manager, gas: 500000, gasPrice: gasPrice }
+        );
 
-    // Check nonce updated
-    nonce = await multisig.nonce.call()
-    assert.equal(nonce.toNumber(), 4)
+        assert.equal((await reg.registry(wallet.address)).toNumber(), number);
+        assertLogContains(result, 'Result', { succeeded: true });
+      }));
 
-    done()
-  }
+      it('properly deploys a contract');
 
-  let executeSendFailure = async function(owners, threshold, signers, done) {
-    let multisig = await ConclaveMultiSig.new(threshold, owners, {from: accounts[0]})
-    let nonce = await multisig.nonce.call()
-    assert.equal(nonce.toNumber(), 1)
+      it('sets succeeded flag of Result event to false if internal tx fails', wait(async () => {
+        const reg = await TestRegistry.new({ from: vc });
+        const data = encodeFunction('fail', [], []);
 
-    // Receive funds
-    await web3SendTransaction({from: accounts[0], to: multisig.address, value: web3.toWei(new BigNumber(2), 'ether')})
+        const transaction = buildTx(nonce, reg.address, amount, 50000, gasPrice, data);
+        const { v, r, s } = signTx(transaction, [signers[0], signers[1]]);
 
-    let fullNonce = await multisig.getFullNonce.call()
-    let randomAddr = solsha3(Math.random()).slice(0,42)
-    let value = web3.toWei(new BigNumber(0.1), 'ether')
-    let tx = buildTx(fullNonce, randomAddr, value, '0x')
-    let sigs = createSigs(signers, multisig.address, tx)
+        const result = await wallet.execute(
+          v, r, s, transaction, { from: manager, gas: 500000, gasPrice: gasPrice }
+        );
 
-    let errMsg = ''
-    try {
-      await multisig.execute(sigs.sigV, sigs.sigR, sigs.sigS, tx, {from: accounts[0], gasLimit: 1000000})
-    }
-    catch(error) {
-      errMsg = error.message
-    }
+        assertLogContains(result, 'Result', { succeeded: false });
+      }));
 
-    assert.equal(errMsg, 'VM Exception while processing transaction: revert', 'Test did not throw')
-    done()
-  }
+      it('increments the nonce value on transaction success', wait(async () => {
+        const transaction = buildTx(nonce, destination, amount, 50000, gasPrice);
+        const { v, r, s } = signTx(transaction, [signers[0], signers[1]]);
 
-  let creationFailure = async function(owners, threshold, done) {
-    try {
-      await ConclaveMultiSig.new(threshold, owners, {from: accounts[0]})
-    }
-    catch(error) {
-      errMsg = error.message
-    }
+        const result = await wallet.execute(
+          v, r, s, transaction, { from: manager, gas: 500000, gasPrice: gasPrice }
+        );
 
-    assert.equal(errMsg, 'VM Exception while processing transaction: revert', 'Test did not throw')
-    done()
-  }
+        assertLogContains(result, 'Result', { succeeded: true });
+        assert.equal(await wallet.fullNonce(), nonce.toNumber() + 1);
+      }));
 
-  before((done) => {
-    let seed = "pull rent tower word science patrol economy legal yellow kit frequent fat"
+      it('increments the nonce value on transaction error', wait(async () => {
+        const reg = await TestRegistry.new({ from: vc });
+        const data = encodeFunction('fail', [], []);
 
-    lightwallet.keystore.createVault(
-    {
-      hdPathString: "m/44'/60'/0'/0",
-      seedPhrase: seed,
-      password: "test",
-      salt: "testsalt"
-    },
-    function (err, keystore) {
-      lw = keystore
-      lw.keyFromPassword("test", function(e,k) {
-        keyFromPw = k
+        const transaction = buildTx(nonce, reg.address, amount, 50000, gasPrice, data);
+        const { v, r, s } = signTx(transaction, [signers[0], signers[1]]);
 
-        lw.generateNewAddress(keyFromPw, 20)
-        acct = lw.getAddresses()
-        acct.sort()
-        done()
-      })
-    })
-  })
+        const result = await wallet.execute(
+          v, r, s, transaction, { from: manager, gas: 500000, gasPrice: gasPrice }
+        );
 
-  describe("3 signers, threshold 2", () => {
-    it("should succeed with signers 0, 1", (done) => {
-      let signers = [acct[0], acct[1]]
-      signers.sort()
-      executeSendSuccess(acct.slice(0,3), 2, signers, done)
-    })
+        assertLogContains(result, 'Result', { succeeded: false });
+        assert.equal(await wallet.fullNonce(), nonce.toNumber() + 1);
+      }));
 
-    it("should succeed with signers 0, 2", (done) => {
-      let signers = [acct[0], acct[2]]
-      signers.sort()
-      executeSendSuccess(acct.slice(0,3), 2, signers, done)
-    })
+      it('fails if signatures are not sorted', wait(async () => {
+        const transaction = buildTx(nonce, destination, amount, 50000, gasPrice);
+        const { v, r, s } = signTx(transaction, [signers[1], signers[0]]);
 
-    it("should succeed with signers 1, 2", (done) => {
-      let signers = [acct[1], acct[2]]
-      signers.sort()
-      executeSendSuccess(acct.slice(0,3), 2, signers, done)
-    })
+        await assertItFails(wallet.execute(
+          v, r, s, transaction, { from: manager, gas: 500000, gasPrice: gasPrice }
+        ));
+      }));
 
-    it("should fail due to non-owner signer", (done) => {
-      let signers = [acct[0], acct[3]]
-      signers.sort()
-      executeSendFailure(acct.slice(0,3), 2, signers, done)
-    })
+      it('fails if a signature is non owner', wait(async () => {
+        const transaction = buildTx(nonce, destination, amount, 50000, gasPrice);
+        const { v, r, s } = signTx(transaction, [signers[0], accounts[5]].sort());
 
-    it("should fail with more signers than threshold", (done) => {
-      executeSendFailure(acct.slice(0,3), 2, acct.slice(0,3), done)
-    })
+        await assertItFails(wallet.execute(
+          v, r, s, transaction, { from: manager, gas: 500000, gasPrice: gasPrice }
+        ));
+      }));
 
-    it("should fail with fewer signers than threshold", (done) => {
-      executeSendFailure(acct.slice(0,3), 2, [acct[0]], done)
-    })
+      it('fails if repeated signature is used', wait(async () => {
+        const transaction = buildTx(nonce, destination, amount, 50000, gasPrice);
+        const { v, r, s } = signTx(transaction, [signers[1], signers[1]]);
 
-    it("should fail with one signer signing twice", (done) => {
-      executeSendFailure(acct.slice(0,3), 2, [acct[0], acct[0]], done)
-    })
+        await assertItFails(wallet.execute(
+          v, r, s, transaction, { from: manager, gas: 500000, gasPrice: gasPrice }
+        ));
+      }));
 
-    it("should fail with signers in wrong order", (done) => {
-      let signers = [acct[0], acct[1]]
-      signers.sort().reverse() //opposite order it should be
-      executeSendFailure(acct.slice(0,3), 2, signers, done)
-    })
+      it('fails if less that threshold signatures are provided', wait(async () => {
+        const transaction = buildTx(nonce, destination, amount, 50000, gasPrice);
+        const { v, r, s } = signTx(transaction, [signers[1]]);
 
-  })
+        await assertItFails(wallet.execute(
+          v, r, s, transaction, { from: manager, gas: 500000, gasPrice: gasPrice }
+        ));
+      }));
 
-  describe("Edge cases", () => {
-    it("should succeed with 10 owners, 10 signers", (done) => {
-      executeSendSuccess(acct.slice(0,10), 10, acct.slice(0,10), done)
-    })
+      it('fails if nonce does not match', wait(async () => {
+        const transaction = buildTx(nonce.add(1), destination, amount, 50000, gasPrice);
+        const { v, r, s } = signTx(transaction, [signers[0], signers[1]]);
 
-    it("should fail to create with signers 0, 0, 2, and threshold 3", (done) => {
-      creationFailure([acct[0],acct[0],acct[2]], 3, done)
-    })
+        await assertItFails(wallet.execute(
+          v, r, s, transaction, { from: manager, gas: 500000, gasPrice: gasPrice }
+        ));
+      }));
 
-    it("should fail with 0 signers", (done) => {
-      executeSendFailure(acct.slice(0,3), 2, [], done)
-    })
+      it('fails if gas price does not match', wait(async () => {
+        const transaction = buildTx(nonce, destination, amount, 50000, gasPrice);
+        const { v, r, s } = signTx(transaction, [signers[0], signers[1]]);
 
-    it("should fail with 11 owners", (done) => {
-      creationFailure(acct.slice(0,11), 2, done)
-    })
-  })
-})
+        await assertItFails(wallet.execute(
+          v, r, s, transaction, { from: manager, gas: 500000, gasPrice: gasPrice.add(1) }
+        ));
+      }));
+
+      it('fails if there is not enough gas to cover user gasLimit', wait(async () => {
+        const transaction = buildTx(nonce, destination, amount, 500000, 1);
+        const { v, r, s } = signTx(transaction, [signers[0], signers[1]]);
+
+        await assertItFails(wallet.execute(
+          v, r, s, transaction, { from: manager, gas: 600000, gasPrice: 1 } // about 110k is req
+        ));
+      }));
+
+      it('uses less than 75k gas on simple transaction on existing account', wait(async () => {
+        const transaction = buildTx(nonce, fundedAccounts[8], amount, 50000, 1);
+        const { v, r, s } = signTx(transaction, [signers[0], signers[2]]);
+
+        const result = await wallet.execute(
+          v, r, s, transaction, { from: manager, gas: 500000, gasPrice: 1 }
+        );
+
+        assertLogContains(result, 'Result', { succeeded: true });
+        console.log(result.logs[0].args.fee.toNumber());
+        assert.isBelow(result.receipt.gasUsed, 75000);
+        assert.isBelow(result.logs[0].args.fee, 75000);
+      }));
+    });
+  });
+
+  // GAS COST ESTIMATION
+
+  [2,4,6,10].forEach((p) => {
+    describe(`given a ${p} out of ${p} wallet that is funded`, () => {
+      let signers;
+      let nonce, destination, amount, gasPrice, gasLimit;
+
+      before(() => {
+        signers = accounts.slice(0, p).sort();
+      });
+
+      describe('activate', () => {
+        it('completely refunds manager for deployment + activation', wait(async () => {
+          const initialBalance = web3.eth.getBalance(manager);
+          const newWallet = await ManagedMultiSig.new({ from: manager, gasPrice: 1 });
+          await newWallet.sendTransaction({ from: vc, value: ether(1) });
+          await newWallet.activate(p, signers, { from: manager, gasPrice: 1 });
+
+          const difference = web3.eth.getBalance(manager).minus(initialBalance).toNumber();
+          // console.log(difference);
+          assert.isAtLeast(difference, 0);
+          assert.isBelow(difference, 1000);
+        }));
+      });
+
+      describe('and active', () => {
+        beforeEach(wait(async () => {
+          await wallet.sendTransaction({ from: vc, value: ether(1) });
+          await wallet.activate(p, signers, { from: manager });
+
+          nonce = await wallet.fullNonce();
+          ({ destination, amount, gasPrice } = randomParams());
+        }));
+
+        describe('execute', () => {
+          it('succeeds and completely refunds manager', wait(async () => {
+            const initialBalance = web3.eth.getBalance(manager);
+            const transaction = buildTx(nonce, destination, 111111111111111111, 50000, 1);
+            const { v, r, s } = signTx(transaction, signers);
+
+            const result = await wallet.execute(
+              v, r, s, transaction, { from: manager, gas: 500000, gasPrice: 1 }
+            );
+
+            assert.equal(web3.eth.getBalance(destination).toNumber(), 111111111111111111);
+            assertLogContains(result, 'Result', { succeeded: true });
+
+            const difference = web3.eth.getBalance(manager).minus(initialBalance).toNumber();
+            // console.log(difference);
+            assert.isAtLeast(difference, 0);
+            assert.isBelow(difference, 1000);
+          }));
+
+          it('succeeds and completely refunds manager with data', wait(async () => {
+            const reg = await TestRegistry.new({ from: vc });
+            const number = 12345;
+            const data = encodeFunction('register', ['uint256'], [number]);
+
+            const initialBalance = web3.eth.getBalance(manager);
+            const transaction = buildTx(nonce, reg.address, amount, 50000, 1, data);
+            const { v, r, s } = signTx(transaction, signers);
+
+            const result = await wallet.execute(
+              v, r, s, transaction, { from: manager, gas: 500000, gasPrice: 1 }
+            );
+
+            assertLogContains(result, 'Result', { succeeded: true });
+            assert.equal((await reg.registry(wallet.address)).toNumber(), number);
+
+            const difference = web3.eth.getBalance(manager).minus(initialBalance).toNumber();
+            // console.log(difference);
+            assert.isAtLeast(difference, 0);
+            assert.isBelow(difference, 1000);
+          }));
+        });
+      });
+    });
+  });
+});

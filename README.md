@@ -18,7 +18,11 @@ By using this contract and signing standard transactions, the HW is capable of d
 
 **nonce**: This contract uses the transaction `nonce` as a way of checking that the transaction can only be sent to the requested contract and to prevent replay attacks. For this the contract keeps a `nonce` state variable that increments on every successfull transaction (as in the original Simple Multisig Contract). The difference is that when checking the transaction nonce it checks against `contract address + nonce` (not only against nonce).
 
-**gas usage**: This contract is much more gas-intensive than the original Simple Multisig. I'm sure a lot optimization can be done on the transaction part.
+**gas usage**: For 2 of 3 multisig, a simple transaction to an already initialized address will cost around 75k gas. Also, contract deployment will cost around 1m gas. This can be improved by removing the manager refund code, without manager refund the transaction usage drops to around 65k.
+
+**different chain replay protection**: This contract has no replay protection for the signed transaction on a different chain. In case of a fork, transactions sent to this contract could be sent to the forked contract also. The only way to get this kind of security would be to have access to the chain id from inside the contract.
+
+**manager refund**: This contract refunds its 'manager' for the gas used when executing a transaction. Since is not posible to know the caller gas limit at runtime, an estimate with less than 1.5% error (for most cases) is used.
 
 ## Testing
 

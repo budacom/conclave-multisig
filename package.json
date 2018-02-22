@@ -24,9 +24,10 @@
   },
   "homepage": "https://github.com/budacom/conclave-multisig#readme",
   "devDependencies": {
-    "eth-lightwallet": "*",
     "bluebird": "*",
+    "eth-lightwallet": "*",
     "left-pad": "*",
+    "lodash": "^4.17.5",
     "solidity-sha3": "*"
   }
 }
