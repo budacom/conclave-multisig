@@ -239,7 +239,7 @@ contract('ManagedMultiSig', function(fundedAccounts) {
         signers = accounts.slice(0, p).sort();
       });
 
-      describe.only('activate', () => {
+      describe('activate', () => {
         it('completely refunds manager if proper fee is used', wait(async () => {
           const initialBalance = web3.eth.getBalance(manager);
           const newWallet = await ManagedMultiSig.new({ from: manager, gasPrice: 1 });
