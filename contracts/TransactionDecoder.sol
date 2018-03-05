@@ -99,12 +99,13 @@ contract TransactionDecoder {
   }
 
   function decodeUint(uint memPtr_, uint len_) private constant returns (uint out) {
-    require(len_ > 0 && len_ <= 32);
+    if(len_ == 0) return 0; // null ints are interpreted as 0
+    require(len_ <= 32);
     assembly { out := div(mload(memPtr_), exp(256, sub(32, len_))) }
   }
 
   function decodeAddress(uint memPtr_, uint len_) private constant returns (address out) {
-    require(len_ == 20);
+    require(len_ == 20); // null addresses are not supported yet
     assembly { out := div(mload(memPtr_), exp(256, 12)) }
   }
 }
