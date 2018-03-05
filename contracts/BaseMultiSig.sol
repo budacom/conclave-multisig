@@ -26,10 +26,14 @@ contract BaseMultiSig is TransactionDecoder {
 
   // PUBLIC METHODS
 
+  /// @return The nonce to be used in the next transaction
+  /// @dev This nonce uses the contract address as starting value, this is to provide both replay
+  /// protection and to prevent transaction to be sent to a different contract with same owners.
   function fullNonce() constant returns (uint) {
     return nonce + uint(this);
   }
 
+  /// @notice This method can be called to suicide the contract. Can only be called via `execute`.
   function recycle(address _target) onlySelf {
     suicide(_target);
   }
@@ -54,8 +58,6 @@ contract BaseMultiSig is TransactionDecoder {
   function validateSignatures(uint8[] sigV_, bytes32[] sigR_, bytes32[] sigS_, bytes tx_) internal {
     require(sigR_.length == threshold);
     require(sigR_.length == sigS_.length && sigR_.length == sigV_.length);
-
-    // validate signatures
 
     bytes32 txHash = keccak256(tx_);
     address lastAdd = address(0); // cannot have address(0) as an owner

@@ -24,6 +24,14 @@ By using this contract and signing standard transactions, the HW is capable of d
 
 **manager refund**: This contract refunds its 'manager' for the gas used when executing a transaction. Since is not posible to know the caller gas limit at runtime, an estimate with less than 1.5% error (for most cases) is used.
 
+## Flavors
+
+This contract is provided in three different flavors:
+
+* `SimpleMultiSig`: The simplest version, intended to be used directly
+* `ManagedMultiSig`: The managed version, intended for a third party to provide deployment and execution of transactions.
+* `ManagedWhitelistedMultiSig`: The whitelisted version, same as the `ManagedMultiSig` but with whitelisting support.
+
 ## Testing
 
 To run the tests:

@@ -3,7 +3,7 @@ pragma solidity 0.4.15;
 import "./ManagedMultiSig.sol";
 
 /// @title A whitelist-enabled version of the ManagedMultiSig
-/// @author ignacio@buda.com
+/// @author Ignacio Baixas (ignacio0buda.com)
 contract ManagedWhitelistedMultiSig is ManagedMultiSig {
   mapping (address => bool) whitelist;  // the whitelisted addresses mapping
 
@@ -15,8 +15,7 @@ contract ManagedWhitelistedMultiSig is ManagedMultiSig {
     return address_ == address(this) || isOwner[address_] || whitelist[address_];
   }
 
-  /// @notice Sets the whitelist status for an address
-  /// @dev this method can only be called by the contract it self (via an execute call)
+  /// @notice Sets the whitelist status for an address. Can only be called via `execute`.
   /// @param address_ The address status to set
   /// @param whitelisted_ true to add address to whitelist, false to remove it
   function setWhitelisted(address address_, bool whitelisted_) onlySelf {

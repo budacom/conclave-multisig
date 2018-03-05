@@ -1,14 +1,9 @@
 pragma solidity 0.4.15;
 
-/**
-* @title TransactionDecoder
-*
-* Provides a `decodeTransaction` to decode RLP encoded Ethereum transactions.
-*
-* Based on RLPReader code by Andreas Olofsson
-*
-* @author Ignacio Baixas (ignacio0buda.com)
-*/
+/// @title The transaction decoder implementation
+/// @author Ignacio Baixas (ignacio0buda.com)
+/// @notice Provides a `decodeTransaction` to decode RLP encoded Ethereum transactions. Based on
+/// RLPReader code by Andreas Olofsson.
 contract TransactionDecoder {
   uint constant DATA_SHORT_START = 0x80;
   uint constant DATA_LONG_START = 0xB8;
