@@ -3,32 +3,15 @@ const _ = require('lodash');
 const RLP = require('rlp');
 
 const {
+  wait, assertItFails, assertLogContains
+} = require('./support/helpers');
+
+const {
   generateSigners, buildTx, signTx, encodeFunction, randomAddress, randomParams, ether, gwei
-} = require('./eth_support');
+} = require('./support/ethereum');
 
 var ManagedMultiSig = artifacts.require("./ManagedMultiSig.sol")
 var TestRegistry = artifacts.require("./TestRegistry.sol")
-
-function wait(_promiseFun) {
-  return function(_done) {
-    _promiseFun().then(_done, _done);
-  };
-}
-
-function assertItFails(_promise) {
-  return _promise.then(function() {
-    assert(false, 'did not fail');
-  }, function() {
-    assert(true);
-  });
-}
-
-function assertLogContains(result_, event_, match_) {
-  assert(
-    _.some(result_.logs, (l) => l.event === event_ && _.isMatch(l.args, match_)),
-    'Matching event not found'
-  );
-}
 
 contract('ManagedMultiSig', function(fundedAccounts) {
   let wallet;
@@ -56,7 +39,7 @@ contract('ManagedMultiSig', function(fundedAccounts) {
     });
 
     it("sets the onwers and threshold for the wallet", wait(async () => {
-      await wallet.activate(2, signers, { from: manager });
+      await wallet.activate(2, signers, 0, { from: manager });
 
       assert(await wallet.isOwner(accounts[1]));
       assert(await wallet.isOwner(accounts[2]));
@@ -65,29 +48,15 @@ contract('ManagedMultiSig', function(fundedAccounts) {
     }));
 
     it("fails if called by an account that is not the manager", wait(async () => {
-      await assertItFails(wallet.activate(2, signers, { from: accounts[1] }));
+      await assertItFails(wallet.activate(2, signers, 0, { from: accounts[1] }));
     }));
 
     it("fails if called on an already active wallet", wait(async () => {
-      await wallet.activate(2, signers, { from: manager });
-      await assertItFails(wallet.activate(2, signers, { from: manager }));
+      await wallet.activate(2, signers, 0, { from: manager });
+      await assertItFails(wallet.activate(2, signers, 0, { from: manager }));
     }));
 
     it("fails if given owner array is not sorted ascending");
-
-    describe("after funding the wallet", () => {
-      beforeEach(wait(async () => {
-        await wallet.sendTransaction({ from: vc, value: ether(1) });
-      }));
-
-      it("transfers the given activation fee to manager", wait(async () => {
-        const initialBalance = web3.eth.getBalance(manager);
-        const activationFee = gwei(10).mul(40 + 6 * 25); // deploying a 3 owner contract is about 105k
-        await wallet.activate(2, [accounts[0], accounts[1], accounts[2], accounts[3], accounts[4], accounts[5]].sort(), { from: manager, gasPrice: gwei(10) });
-
-        assert.isAbove(web3.eth.getBalance(manager).toNumber(), initialBalance.toNumber());
-      }));
-    });
   });
 
   describe("execute", () => {
@@ -100,7 +69,7 @@ contract('ManagedMultiSig', function(fundedAccounts) {
       });
 
       beforeEach(wait(async () => {
-        await wallet.activate(2, signers, { from: manager });
+        await wallet.activate(2, signers, 0, { from: manager });
         await wallet.sendTransaction({ from: vc, value: ether(1) });
 
         nonce = await wallet.fullNonce();
@@ -252,7 +221,7 @@ contract('ManagedMultiSig', function(fundedAccounts) {
         );
 
         assertLogContains(result, 'Result', { succeeded: true });
-        console.log(result.logs[0].args.fee.toNumber());
+        // console.log(result.logs[0].args.fee.toNumber());
         assert.isBelow(result.receipt.gasUsed, 75000);
         assert.isBelow(result.logs[0].args.fee, 75000);
       }));
@@ -261,7 +230,7 @@ contract('ManagedMultiSig', function(fundedAccounts) {
 
   // GAS COST ESTIMATION
 
-  [2,4,6,10].forEach((p) => {
+  [2, 4, 6, 10].forEach((p) => {
     describe(`given a ${p} out of ${p} wallet that is funded`, () => {
       let signers;
       let nonce, destination, amount, gasPrice, gasLimit;
@@ -270,24 +239,25 @@ contract('ManagedMultiSig', function(fundedAccounts) {
         signers = accounts.slice(0, p).sort();
       });
 
-      describe('activate', () => {
-        it('completely refunds manager for deployment + activation', wait(async () => {
+      describe.only('activate', () => {
+        it('completely refunds manager if proper fee is used', wait(async () => {
           const initialBalance = web3.eth.getBalance(manager);
           const newWallet = await ManagedMultiSig.new({ from: manager, gasPrice: 1 });
           await newWallet.sendTransaction({ from: vc, value: ether(1) });
-          await newWallet.activate(p, signers, { from: manager, gasPrice: 1 });
+
+          const fee = 911177 + (p * 22208);
+          await newWallet.activate(p, signers, fee, { from: manager, gasPrice: 1 });
 
           const difference = web3.eth.getBalance(manager).minus(initialBalance).toNumber();
           // console.log(difference);
-          assert.isAtLeast(difference, 0);
-          assert.isBelow(difference, 1000);
+          assert.equal(difference, 0);
         }));
       });
 
       describe('and active', () => {
         beforeEach(wait(async () => {
           await wallet.sendTransaction({ from: vc, value: ether(1) });
-          await wallet.activate(p, signers, { from: manager });
+          await wallet.activate(p, signers, 0, { from: manager });
 
           nonce = await wallet.fullNonce();
           ({ destination, amount, gasPrice } = randomParams());

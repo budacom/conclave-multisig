@@ -14,27 +14,10 @@ contract ManagedMultiSig is BaseMultiSig {
     manager = msg.sender;
   }
 
-  function activationGas(uint threshold_) returns (uint) {
-    return 962089 + (threshold_ * 22208);
-  }
-
-  // This method estimates manager refund gas (except for the 'call' call, that is measured)
-  //
-  // It does a pretty good job for no/small data calls.
-  // For large data calls it probably underestimates, more tests are needed.
-  //
-  function baseGas(uint dataLength_) returns (uint) {
-    return 47800 + (uint(threshold) * 9500) + dataLength_ * 33;
-  }
-
-  function activate(uint8 threshold_, address[] owners_) onlyManager onlyInactive {
+  function activate(uint8 threshold_, address[] owners_, uint fee_) onlyManager onlyInactive {
     setup(threshold_, owners_);
 
-    manager.send(activationGas(uint(threshold_)) * tx.gasprice);
-  }
-
-  function setManager(address manager_) onlySelf {
-    manager = manager_;
+    manager.send(fee_ > this.balance ? this.balance : fee_);
   }
 
   function execute(uint8[] sigV_, bytes32[] sigR_, bytes32[] sigS_, bytes tx_) onlyActive {
@@ -61,6 +44,10 @@ contract ManagedMultiSig is BaseMultiSig {
   }
 
   // PRIVATE METHODS
+
+  function baseGas(uint dataLength_) private returns (uint) {
+    return 47800 + (uint(threshold) * 9500) + dataLength_ * 33;
+  }
 
   function payManager(uint totalGas_) private returns (uint) {
     uint fee = totalGas_ * tx.gasprice;
