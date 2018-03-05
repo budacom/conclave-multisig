@@ -27,6 +27,7 @@ contract ManagedMultiSig is BaseMultiSig {
 
     require(nn == fullNonce()); // check nonce
     require(gp == tx.gasprice); // check gas price to prevent front running attacks
+    require(canCall(to));
 
     nonce = nonce + 1;
 
@@ -47,6 +48,11 @@ contract ManagedMultiSig is BaseMultiSig {
 
   function baseGas(uint dataLength_) private returns (uint) {
     return 47800 + (uint(threshold) * 9500) + dataLength_ * 33;
+  }
+
+  // The can call method can be overriden by child contracts to implement custom policies
+  function canCall(address _) private returns (bool) {
+    return true;
   }
 
   function payManager(uint totalGas_) private returns (uint) {
