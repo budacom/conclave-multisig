@@ -12,6 +12,14 @@ exports.assertItFails = function (_promise) {
   });
 };
 
+exports.assertTxSucceeded = function (_promise) {
+  return _promise.then(function (_result) {
+    assert.equal(_result.receipt.status, 1, 'transaction exited with status 0');
+  }, function() {
+    assert(false, 'transaction failed');
+  });
+};
+
 exports.assertLogContains = function (result_, event_, match_) {
   assert(
     _.some(result_.logs, (l) => l.event === event_ && _.isMatch(l.args, match_)),

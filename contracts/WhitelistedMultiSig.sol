@@ -1,11 +1,17 @@
 pragma solidity 0.4.15;
 
-import "./ManagedMultiSig.sol";
+import "./SimpleMultiSig.sol";
 
-/// @title A whitelist-enabled version of the ManagedMultiSig
+/// @title A whitelist-enabled version of the SimpleMultiSig
 /// @author Ignacio Baixas (ignacio0buda.com)
-contract ManagedWhitelistedMultiSig is ManagedMultiSig {
+contract WhitelistedMultiSig is SimpleMultiSig {
   mapping (address => bool) whitelist;  // the whitelisted addresses mapping
+
+  /// @param threshold_ The multisig signature threshold
+  /// @param owners_ The wallet allowed signers adresses, in ascending order.
+  function WhitelistedMultiSig(uint8 threshold_, address[] owners_) SimpleMultiSig(threshold_, owners_) {
+    // nothing extra here
+  }
 
   /// @notice Check if a given address is whitelisted by this wallet
   /// @dev contract address and owners are always whitelisted
@@ -23,11 +29,6 @@ contract ManagedWhitelistedMultiSig is ManagedMultiSig {
   }
 
   // PRIVATE METHODS
-
-  /// @dev Override base refund gas, a little more gas is required for the whitelist validation
-  function baseGas(uint dataLength_) private returns (uint) {
-    return 48800 + (uint(threshold) * 9500) + dataLength_ * 33;
-  }
 
   /// @dev Just forward call to isWhitelisted
   function canCall(address address_) private returns (bool) {
