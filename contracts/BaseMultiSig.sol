@@ -30,7 +30,7 @@ contract BaseMultiSig is TransactionDecoder {
   /// @dev This nonce uses the contract address as starting value, this is to provide both replay
   /// protection and to prevent transaction to be sent to a different contract with same owners.
   function fullNonce() constant returns (uint) {
-    return nonce + uint(this);
+    return uint(this) * 0x100000000 + nonce;
   }
 
   /// @notice This method can be called to suicide the contract. Can only be called via `execute`.
