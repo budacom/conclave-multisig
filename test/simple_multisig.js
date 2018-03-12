@@ -195,15 +195,15 @@ contract('SimpleMultiSig', function(fundedAccounts) {
       }));
 
       describe('execute', () => {
-        it('succeeds and uses expected gas', wait(async () => {
-          const transaction = buildTx(nonce, fundedAccounts[8], 111111111111111111, 50000, 1);
+        it('succeeds and uses expected max gas', wait(async () => {
+          const transaction = buildTx(nonce, destination, 111111111111111111, 50000, 1);
           const { v, r, s } = signTx(transaction, signers);
 
           const result = await wallet.execute(
             v, r, s, transaction, { from: manager, gas: 500000, gasPrice: 1 }
           );
 
-          assert.isBelow(result.receipt.gasUsed, 47000 + p * 9550);
+          assert.isBelow(result.receipt.gasUsed, 72000 + p * 9550);
         }));
       });
     });
