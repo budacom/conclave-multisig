@@ -70,6 +70,17 @@ contract('SimpleMultiSig', function(fundedAccounts) {
         }));
       });
 
+      it(`succeeds if gas price is less than payload gas price`, wait(async () => {
+        const transaction = buildTx(nonce, destination, amount, 50000, gasPrice);
+        const { v, r, s } = signTx(transaction, [signers[0], signers[1]]);
+
+        const result = await wallet.execute(
+          v, r, s, transaction, { from: manager, gas: 500000, gasPrice: gasPrice.add(-1) }
+        );
+
+        assert.equal(web3.eth.getBalance(destination).toNumber(), amount);
+      }));
+
       it('properly calls a contract function', wait(async () => {
         const reg = await TestRegistry.new({ from: vc });
         const number = 12345;
@@ -143,7 +154,7 @@ contract('SimpleMultiSig', function(fundedAccounts) {
         ));
       }));
 
-      it('fails if gas price does not match', wait(async () => {
+      it('fails if gas price is higher than payload gas price', wait(async () => {
         const transaction = buildTx(nonce, destination, amount, 50000, gasPrice);
         const { v, r, s } = signTx(transaction, [signers[0], signers[1]]);
 

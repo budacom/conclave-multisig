@@ -50,7 +50,7 @@ contract SimpleMultiSig is TransactionDecoder {
     (uint nn, uint gp, uint gl, address to, uint am, bytes memory dt) = decodeTransaction(tx_); // ~ 3.5k gas
 
     require(nn == fullNonce()); // check nonce
-    require(gp == tx.gasprice); // check gas price
+    require(gp >= tx.gasprice); // check gas price
     require(canCall(to));
 
     nonce = nonce + 1;
