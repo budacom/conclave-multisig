@@ -1,4 +1,4 @@
-pragma solidity ^0.4.15;
+pragma solidity 0.4.24;
 
 // This contract is only used for testing purposes.
 contract TestRegistry {
@@ -6,15 +6,15 @@ contract TestRegistry {
 
   mapping(address => uint) public registry;
 
-  function register(uint x) payable {
+  function register(uint x) external payable {
     registry[msg.sender] = x;
   }
 
-  function burn(bytes data) payable {
-    FooBar(data);
+  function burn(bytes data) external payable {
+    emit FooBar(data);
   }
 
-  function fail() payable {
+  function fail() external payable {
     require(false);
   }
 }

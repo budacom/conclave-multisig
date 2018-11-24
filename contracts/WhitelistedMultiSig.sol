@@ -1,4 +1,4 @@
-pragma solidity 0.4.15;
+pragma solidity 0.4.24;
 
 import "./SimpleMultiSig.sol";
 
@@ -9,7 +9,7 @@ contract WhitelistedMultiSig is SimpleMultiSig {
 
   /// @param threshold_ The multisig signature threshold
   /// @param owners_ The wallet allowed signers adresses, in ascending order.
-  function WhitelistedMultiSig(uint8 threshold_, address[] owners_) SimpleMultiSig(threshold_, owners_) {
+  constructor(uint8 threshold_, address[] owners_) SimpleMultiSig(threshold_, owners_) public {
     // nothing extra here
   }
 
@@ -24,14 +24,14 @@ contract WhitelistedMultiSig is SimpleMultiSig {
   /// @notice Sets the whitelist status for an address. Can only be called via `execute`.
   /// @param address_ The address status to set
   /// @param whitelisted_ true to add address to whitelist, false to remove it
-  function setWhitelisted(address address_, bool whitelisted_) onlySelf {
+  function setWhitelisted(address address_, bool whitelisted_) onlySelf external {
     whitelist[address_] = whitelisted_;
   }
 
   // PRIVATE METHODS
 
   /// @dev Just forward call to isWhitelisted
-  function canCall(address address_) private returns (bool) {
+  function canCall(address address_) internal returns (bool) {
     return isWhitelisted(address_);
   }
 }

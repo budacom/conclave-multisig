@@ -1,4 +1,4 @@
-pragma solidity 0.4.15;
+pragma solidity 0.4.24;
 
 /// @title The transaction decoder implementation
 /// @author Ignacio Baixas (ignacio0buda.com)
@@ -12,7 +12,7 @@ contract TransactionDecoder {
   uint constant DATA_LONG_OFFSET = 0xB7;
   uint constant LIST_LONG_OFFSET = 0xF7;
 
-  function decodeTransaction(bytes transaction_) internal constant returns (
+  function decodeTransaction(bytes transaction_) internal pure returns (
     uint nonce_, uint gasPrice_, uint gasLimit_, address destination_, uint amount_, bytes data_
   ) {
     require(transaction_.length > 0);
@@ -54,7 +54,7 @@ contract TransactionDecoder {
     // Ignore v, r, s components for now.
   }
 
-  function decodeListHeader(uint memPtr_) private constant returns (uint ptr, uint len) {
+  function decodeListHeader(uint memPtr_) private pure returns (uint ptr, uint len) {
     uint b0;
     assembly { b0 := byte(0, mload(memPtr_)) }
 
@@ -72,7 +72,7 @@ contract TransactionDecoder {
     }
   }
 
-  function decodeDataHeader(uint memPtr_) private constant returns (uint ptr, uint len) {
+  function decodeDataHeader(uint memPtr_) private pure returns (uint ptr, uint len) {
     uint b0;
     assembly { b0 := byte(0, mload(memPtr_)) }
 
@@ -93,13 +93,13 @@ contract TransactionDecoder {
     }
   }
 
-  function decodeUint(uint memPtr_, uint len_) private constant returns (uint out) {
+  function decodeUint(uint memPtr_, uint len_) private pure returns (uint out) {
     if(len_ == 0) return 0; // null ints are interpreted as 0
     require(len_ <= 32);
     assembly { out := div(mload(memPtr_), exp(256, sub(32, len_))) }
   }
 
-  function decodeAddress(uint memPtr_, uint len_) private constant returns (address out) {
+  function decodeAddress(uint memPtr_, uint len_) private pure returns (address out) {
     require(len_ == 20); // null addresses are not supported yet
     assembly { out := div(mload(memPtr_), exp(256, 12)) }
   }
