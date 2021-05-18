@@ -1,4 +1,4 @@
-# conclave-multisig
+# buda-wallet-multisig
 
 Simple multisig contract that uses standard RLP encoded ethereum transactions plus detached signatures.
 
@@ -12,7 +12,7 @@ When using a hardware wallet (HW) like Trezor, having the ability to review info
 
 When using non-standard transactions (like a custom contract payload), the user has to sign a message for which the HW has no native support, this means that the HW will show the user a long string of hashed garbage and it will be really difficult for the user to be sure that what he's signing is the transaction the site is telling him he's signing.
 
-By using this contract and signing standard transactions, the HW is capable of displaying the transaction information as in any regular transaction, making it very clear to the user. The user only needs to confirm that the contract processing the transaction is an instance of `ConclaveMultiSig` (by checking the deployed code at the contract address).
+By using this contract and signing standard transactions, the HW is capable of displaying the transaction information as in any regular transaction, making it very clear to the user. The user only needs to confirm that the contract processing the transaction is an instance of `SimpleMultiSig` (by checking the deployed code at the contract address).
 
 ## Caveats
 
