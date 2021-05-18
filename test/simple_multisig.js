@@ -51,7 +51,7 @@ contract('SimpleMultiSig', function(fundedAccounts) {
         signers = [accounts[0], accounts[1], accounts[2]].sort();
         wallet = await SimpleMultiSig.new(2, signers, { from: manager });
 
-        await wallet.sendTransaction({ from: vc, value: ether(1) });
+        await wallet.sendTransaction({ from: vc, value: ether("1") });
 
         nonce = await wallet.fullNonce();
         ({ destination, amount, gasPrice } = randomParams());
@@ -66,7 +66,7 @@ contract('SimpleMultiSig', function(fundedAccounts) {
             v, r, s, transaction, { from: manager, gas: 500000, gasPrice: gasPrice }
           );
 
-          assert.equal(web3.eth.getBalance(destination).toNumber(), amount);
+          assert.equal(await web3.eth.getBalance(destination), amount);
         }));
       });
 
@@ -78,7 +78,7 @@ contract('SimpleMultiSig', function(fundedAccounts) {
           v, r, s, transaction, { from: manager, gas: 500000, gasPrice: gasPrice.add(-1) }
         );
 
-        assert.equal(web3.eth.getBalance(destination).toNumber(), amount);
+        assert.equal(await web3.eth.getBalance(destination), amount);
       }));
 
       it('properly calls a contract function', wait(async () => {
@@ -93,7 +93,7 @@ contract('SimpleMultiSig', function(fundedAccounts) {
           v, r, s, transaction, { from: manager, gas: 500000, gasPrice: gasPrice }
         );
 
-        assert.equal((await reg.registry(wallet.address)).toNumber(), number);
+        assert.equal((await reg.registry(wallet.address)), number);
       }));
 
       it('properly deploys a contract');
@@ -106,7 +106,9 @@ contract('SimpleMultiSig', function(fundedAccounts) {
           v, r, s, transaction, { from: manager, gas: 500000, gasPrice: gasPrice }
         );
 
-        assert.equal(await wallet.fullNonce(), nonce.toNumber() + 1);
+        const nextNonce = await wallet.fullNonce();
+
+        assert.equal(nextNonce.toString(), nonce.add(new web3.utils.BN("1")).toString());
       }));
 
       it('fails if signatures are not sorted', wait(async () => {
@@ -146,7 +148,10 @@ contract('SimpleMultiSig', function(fundedAccounts) {
       }));
 
       it('fails if nonce does not match', wait(async () => {
-        const transaction = buildTx(nonce.add(1), destination, amount, 50000, gasPrice);
+        const transaction = buildTx(
+          nonce.add(new web3.utils.BN('1')), destination, amount, 50000, gasPrice
+        );
+        
         const { v, r, s } = signTx(transaction, [signers[0], signers[1]]);
 
         await assertItFails(wallet.execute(
@@ -199,7 +204,7 @@ contract('SimpleMultiSig', function(fundedAccounts) {
         signers = accounts.slice(0, p).sort();
         wallet = await SimpleMultiSig.new(p, signers, { from: manager });
 
-        await wallet.sendTransaction({ from: vc, value: ether(1) });
+        await wallet.sendTransaction({ from: vc, value: ether("1") });
 
         nonce = await wallet.fullNonce();
         ({ destination, amount, gasPrice } = randomParams());

@@ -1,4 +1,4 @@
-pragma solidity 0.4.24;
+pragma solidity 0.8.4;
 
 /// @title The transaction decoder implementation
 /// @author Ignacio Baixas (ignacio0buda.com)
@@ -12,8 +12,8 @@ contract TransactionDecoder {
   uint constant DATA_LONG_OFFSET = 0xB7;
   uint constant LIST_LONG_OFFSET = 0xF7;
 
-  function decodeTransaction(bytes transaction_) internal pure returns (
-    uint nonce_, uint gasPrice_, uint gasLimit_, address destination_, uint amount_, bytes data_
+  function decodeTransaction(bytes memory transaction_) internal pure returns (
+    uint nonce_, uint gasPrice_, uint gasLimit_, address destination_, uint amount_, bytes memory data_
   ) {
     require(transaction_.length > 0);
 
