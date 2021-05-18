@@ -15,7 +15,8 @@ var TestRegistry = artifacts.require("./TestRegistry.sol")
 
 contract('SimpleMultiSig', function(fundedAccounts) {
   const manager = fundedAccounts[0];
-  const vc = fundedAccounts[1];
+  const otherManager = fundedAccounts[1];
+  const vc = fundedAccounts[2];
   let accounts;
 
   before(wait(async () => {
@@ -41,19 +42,52 @@ contract('SimpleMultiSig', function(fundedAccounts) {
     it("fails if signers are not sorted");
   });
 
+  describe("fullNonce", () => {
+    let wallet, otherWallet;
+
+    context("given a 2 out of 3 funded wallet", () => {
+      beforeEach(wait(async () => {
+        let signers = [accounts[0], accounts[1], accounts[2]].sort();
+        wallet = await SimpleMultiSig.new(2, signers, { from: manager });
+        otherWallet = await SimpleMultiSig.new(2, signers, { from: manager });
+      }));
+
+      it("generates same nonce for same caller", async () => {
+        const firstNonce = await wallet.fullNonce(manager);
+        const secondNonce = await wallet.fullNonce(manager);
+
+        assert.equal(firstNonce.toString(), secondNonce.toString());
+      });
+
+      it("generates different nonces for different callers", async () => {
+        const firstNonce = await wallet.fullNonce(manager);
+        const secondNonce = await wallet.fullNonce(otherManager);
+
+        assert.notEqual(firstNonce.toString(), secondNonce.toString());
+      });
+
+      it("generates different nonces for different wallets and same caller", async () => {
+        const firstNonce = await wallet.fullNonce(manager);
+        const secondNonce = await otherWallet.fullNonce(manager);
+
+        assert.notEqual(firstNonce.toString(), secondNonce.toString());
+      });
+    });
+  });
+
   describe("execute", () => {
     let wallet;
     let signers;
     let nonce, destination, amount, gasPrice, gasLimit;
 
-    describe("given a 2 out of 3 funded wallet", () => {
+    context("given a 2 out of 3 funded wallet", () => {
       beforeEach(wait(async () => {
         signers = [accounts[0], accounts[1], accounts[2]].sort();
         wallet = await SimpleMultiSig.new(2, signers, { from: manager });
 
-        await wallet.sendTransaction({ from: vc, value: ether("1") });
+        await wallet.sendTransaction({ from: vc, value: ether("2") });
 
-        nonce = await wallet.fullNonce();
+        nonce = await wallet.fullNonce(manager);
         ({ destination, amount, gasPrice } = randomParams());
       }));
 
@@ -106,7 +140,7 @@ contract('SimpleMultiSig', function(fundedAccounts) {
           v, r, s, transaction, { from: manager, gas: 500000, gasPrice: gasPrice }
         );
 
-        const nextNonce = await wallet.fullNonce();
+        const nextNonce = await wallet.fullNonce(manager);
 
         assert.equal(nextNonce.toString(), nonce.add(new web3.utils.BN("1")).toString());
       }));
@@ -151,7 +185,7 @@ contract('SimpleMultiSig', function(fundedAccounts) {
         const transaction = buildTx(
           nonce.add(new web3.utils.BN('1')), destination, amount, 50000, gasPrice
         );
-        
+
         const { v, r, s } = signTx(transaction, [signers[0], signers[1]]);
 
         await assertItFails(wallet.execute(
@@ -181,13 +215,25 @@ contract('SimpleMultiSig', function(fundedAccounts) {
       }));
 
       it('uses less than 65k gas on simple transaction on existing account', wait(async () => {
-        const transaction = buildTx(nonce, fundedAccounts[8], amount, 50000, 1);
-        const { v, r, s } = signTx(transaction, [signers[0], signers[2]]);
-
-        const result = await wallet.execute(
-          v, r, s, transaction, { from: manager, gas: 500000, gasPrice: 1 }
+        // first transaction only to set nonce
+        let transaction = buildTx(nonce, fundedAccounts[8], amount, 50000, 1);
+        let sign = signTx(transaction, [signers[0], signers[2]]);
+        
+        await wallet.execute(
+          sign.v, sign.r, sign.s, transaction, { from: manager, gas: 500000, gasPrice: 1 }
         );
 
+        transaction = buildTx(
+          nonce.add(new web3.utils.BN('1')), fundedAccounts[8], amount, 50000, 1
+        );
+
+        sign = signTx(transaction, [signers[0], signers[2]]);
+
+        const result = await wallet.execute(
+          sign.v, sign.r, sign.s, transaction, { from: manager, gas: 500000, gasPrice: 1 }
+        );
+
+        console.log(`Gas used: ${result.receipt.gasUsed}`);
         assert.isBelow(result.receipt.gasUsed, 65000);
       }));
     });
@@ -204,19 +250,30 @@ contract('SimpleMultiSig', function(fundedAccounts) {
         signers = accounts.slice(0, p).sort();
         wallet = await SimpleMultiSig.new(p, signers, { from: manager });
 
-        await wallet.sendTransaction({ from: vc, value: ether("1") });
+        await wallet.sendTransaction({ from: vc, value: ether("2") });
 
-        nonce = await wallet.fullNonce();
+        nonce = await wallet.fullNonce(manager);
         ({ destination, amount, gasPrice } = randomParams());
       }));
 
       describe('execute', () => {
         it('succeeds and uses expected max gas', wait(async () => {
-          const transaction = buildTx(nonce, destination, 111111111111111111, 50000, 1);
-          const { v, r, s } = signTx(transaction, signers);
+          // first transaction only to set nonce
+          let transaction = buildTx(nonce, destination, 111111111111111111, 50000, 1);
+          let sign = signTx(transaction, signers);
+
+          await wallet.execute(
+            sign.v, sign.r, sign.s, transaction, { from: manager, gas: 500000, gasPrice: 1 }
+          );
+
+          transaction = buildTx(
+            nonce.add(new web3.utils.BN('1')), destination, 111111111111111111, 50000, 1
+          );
+
+          sign = signTx(transaction, signers);
 
           const result = await wallet.execute(
-            v, r, s, transaction, { from: manager, gas: 500000, gasPrice: 1 }
+            sign.v, sign.r, sign.s, transaction, { from: manager, gas: 500000, gasPrice: 1 }
           );
 
           assert.isBelow(result.receipt.gasUsed, 72000 + p * 9550);

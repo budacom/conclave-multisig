@@ -3,7 +3,6 @@ pragma solidity 0.8.4;
 import "./SimpleMultiSig.sol";
 
 /// @title A whitelist-enabled version of the SimpleMultiSig
-/// @author Ignacio Baixas (ignacio0buda.com)
 contract WhitelistedMultiSig is SimpleMultiSig {
   mapping (address => bool) whitelist;  // the whitelisted addresses mapping
 

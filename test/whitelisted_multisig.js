@@ -27,7 +27,7 @@ contract('WhitelistedMultiSig', function(fundedAccounts) {
       wallet = await WhitelistedMultiSig.new(2, signers, { from: delegate, gas: 2000000 });
       await wallet.sendTransaction({ from: vc, value: ether('1') });
 
-      nonce = await wallet.fullNonce();
+      nonce = await wallet.fullNonce(delegate);
       ({ destination, amount, gasPrice } = randomParams());
     }));
 
@@ -64,7 +64,6 @@ contract('WhitelistedMultiSig', function(fundedAccounts) {
         const transaction = buildTx(
           nonce.add(new web3.utils.BN('1')), destination, amount, 50000, gasPrice
         );
-        
         const { v, r, s } = signTx(transaction, [signers[0], signers[1]]);
 
         await assertTxSucceeded(wallet.execute(

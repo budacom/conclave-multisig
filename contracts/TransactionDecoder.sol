@@ -1,7 +1,6 @@
 pragma solidity 0.8.4;
 
 /// @title The transaction decoder implementation
-/// @author Ignacio Baixas (ignacio0buda.com)
 /// @notice Provides a `decodeTransaction` to decode RLP encoded Ethereum transactions. Based on
 /// RLPReader code by Andreas Olofsson.
 contract TransactionDecoder {
@@ -13,7 +12,7 @@ contract TransactionDecoder {
   uint constant LIST_LONG_OFFSET = 0xF7;
 
   function decodeTransaction(bytes memory transaction_) internal pure returns (
-    uint nonce_, uint gasPrice_, uint gasLimit_, address destination_, uint amount_, bytes memory data_
+    uint nonce_, uint gasPrice_, uint gasLimit_, address to_, uint amount_, bytes memory data_
   ) {
     require(transaction_.length > 0);
 
@@ -36,7 +35,7 @@ contract TransactionDecoder {
     gasLimit_ = decodeUint(memPtr, len);
 
     (memPtr, len) = decodeDataHeader(memPtr + len);
-    destination_ = decodeAddress(memPtr, len);
+    to_ = decodeAddress(memPtr, len);
 
     (memPtr, len) = decodeDataHeader(memPtr + len);
     amount_ = decodeUint(memPtr, len);
