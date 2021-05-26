@@ -1,4 +1,4 @@
-pragma solidity 0.4.24;
+pragma solidity 0.8.4;
 
 // This contract is only used for testing purposes.
 contract TestRegistry {
@@ -10,7 +10,7 @@ contract TestRegistry {
     registry[msg.sender] = x;
   }
 
-  function burn(bytes data) external payable {
+  function burn(bytes calldata data) external payable {
     emit FooBar(data);
   }
 

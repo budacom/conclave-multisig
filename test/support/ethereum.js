@@ -73,7 +73,7 @@ exports.signTx = function (tx_, signers_) {
 
   for (let i = 0; i < signers_.length; i++) {
     const privKey = keystore.exportPrivateKey(strip0x(signers_[i]), key);
-    const txHash = EthUtil.sha3(new Buffer(strip0x(tx_), 'hex'));
+    const txHash = EthUtil.keccak(new Buffer(strip0x(tx_), 'hex'));
     const sig = EthUtil.ecsign(txHash, new Buffer(privKey, 'hex'));
 
     v.push(sig.v);
@@ -101,9 +101,9 @@ exports.randomParams = function () {
 };
 
 exports.ether = function (amount_) {
-  return new BigNumber(web3.toWei(amount_, 'ether'));
+  return new BigNumber(web3.utils.toWei(amount_, 'ether'));
 };
 
 exports.gwei = function (amount_) {
-  return new BigNumber(web3.toWei(amount_, 'gwei'));
+  return new BigNumber(web3.utils.toWei(amount_, 'gwei'));
 };
